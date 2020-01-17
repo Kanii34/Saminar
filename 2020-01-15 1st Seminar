@@ -1,0 +1,325 @@
+install.packages("coda")
+install.packages(c("intoo","bivariate"))
+
+library(ggplot2)
+library(mcmc)
+library(coda)
+library(MASS)
+library(intoo)
+library(bivariate)
+library(VGAM)
+library(mvtnorm)
+set.seed(2020)
+############
+
+mu0=c(1,2)
+sigma0=matrix(c(1,0.9,0.9,1),2,2,byrow = T)
+real.sample=rmvnorm(4000,mean=mu0,sigma=sigma0)
+colnames(real.sample)=c("X1","X2")
+real.sample=as.data.frame(real.sample)
+############ 1 #################
+
+ddbivnorm=function(v,mu,sigma){
+  exp(-(t(v-mu)%*%solve(sigma)%*%(v-mu))/2)
+}
+#1 -> candidate-generating function is symmetric
+set.seed(2020)
+X1=matrix(c(rnorm(1),rnorm(1)),nrow=N,ncol=2,byrow=T)
+colnames(X1)=c("X1","X2")
+mu0=c(1,2)
+sigma0=matrix(c(1,0.9,0.9,1),2,2,byrow = T)
+
+N=6000
+s1=0.75
+na1=0
+s2=1
+for (i in 1:(N-1)){
+  z1=runif(1,-s1,s1)
+  z2=runif(1,-s2,s2)
+  candi=c(X1[i,1]+z1,X1[i,2]+z2)
+  ap=min(dmvnorm(candi,mu0,sigma0)/dmvnorm(X1[i,],mu0,sigma0),1)
+  U=runif(1,0,1)
+  if(U<=ap){
+    X1[i+1,]=candi
+    na1=na1+1}
+  if(U>ap){X1[i+1,]=X1[i,]}
+}
+
+### ploting -1 ###################
+X1=as.data.frame(X1)
+colnames(X1)=c("X1","X2")
+ggplot()+geom_jitter(aes(x=real.sample$X1,y=real.sample$X2),col="gray",alpha=0.6)+
+  geom_jitter(aes(x=X1$X1,y=X1$X2),col="#FF3366",alpha=0.3)+xlab("X1")+ylab("X2")
+  
+
+acc1=na1/N
+acc1
+cor(X1$X1,X1$X2) #0.8837
+summary(X1)
+
+#trace plot
+time=2000:N
+X_1=X1[2000:N,]
+ggplot(X_1,aes(x=time))+geom_line(aes(y=X1))
+
+#mean plot
+X1.mean=matrix(X1[1,],nrow=N,ncol=2)
+for (i in 2:N){
+  X1.mean[i,]=colMeans(X1[1:i,])
+}
+plot(x=1:N,y=X1.mean[,1])
+plot(x=1:N,y=X1.mean[,2])
+
+
+ggplot(X)+geom_density(aes(x=X1))+geom_density(aes(x=X2))
+me=rowMeans(X)
+me=as.vector(me)
+X_=data.frame(X,me)
+ggplot(X_,aes(x=time,y=me))+geom_line()
+
+####################2 -> also symmetric ##################
+set.seed(2020)
+
+X2=matrix(c(rnorm(1),rnorm(1)),nrow=N,ncol=2)
+colnames(X2)=c("X1","X2")
+N=4000
+na2=0
+sigma2=matrix(c(0.6,0,0,0.4),2,2,byrow=T)
+i=1
+for (i in 1:(N-1)){
+  z=rmvnorm(1,mean=c(0,0),sigma = sigma2)
+  candi=X2[i,]+z
+  ap=min(dmvnorm(candi,mu0,sigma0)/dmvnorm(X2[i,],mu0,sigma0),1)
+  U=runif(1,0,1)
+  if(U<=ap){
+    X2[i+1,]=candi
+    na2=na2+1}
+  if(U>ap){X2[i+1,]=X2[i,]}
+}
+### ploting -2 #############
+X2=as.data.frame(X2)
+ggplot()+geom_jitter(aes(x=real.sample$X1,y=real.sample$X2),col="gray",alpha=0.6)+
+  geom_jitter(aes(x=X2$X1,y=X2$X2),col="#FF3366",alpha=0.3)+xlab("X1")+ylab("X2")
+acc2=na2/N
+acc2
+cov(X2$X1,X2$X2) #0.8792
+summary(X2)
+#trace plot
+X2_=X2[2000:N,]
+ggplot(X_,aes(x=time,y=X1))+geom_line()
+#mean plot
+X2.mean=matrix(NA,nrow=N,ncol=2)
+for (i in 2:N){
+  X2.mean[i,]=colMeans(X2[1:i,])
+}
+
+plot(x=1:N,y=X2.mean[,1])
+plot(x=1:N,y=X2.mean[,2])
+
+############## 3 ########### <- 이거 다시 해야돼~!~!~!~!~!~!~!~!~! #######
+set.seed(2020)
+N=6000
+na3=0
+X3=matrix(c(rnorm(1),rnorm(1)),nrow=N,ncol=2,byrow=T)
+h=function(D,v){
+  y=(1/(2*pi))*(1/sqrt(det(D)))*exp(-t(v-mu0)%*%D%*%(v-mu0))
+  return(y)
+}
+D=diag(2,2,2)
+c=0.9
+for ( i in 2:N){
+  #draw candidate using A-R step
+  repeat{
+    z=rmvnorm(1,mu3,D) # generate function is bivariate normal
+    if (runif(1) <= (h(D,as.vector(z))/(c*dmvnorm(z,mu3,D)))){
+      candi<-z
+      accept=T
+      break
+    }
+      
+  }
+  
+  C1=ddbivnorm(X3[i-1,],mu0,sigma0)<c*h(D,as.vector(X3[i-1,]))
+  C2=ddbivnorm(as.vector(candi),mu0,sigma0)<c*h(D,as.vector(candi))
+  if (C1==TRUE){ ap=1 }
+  if (C1==F & C2==T) {ap=c*h(D,as.vector(X3[i-1,]))/ddbivnorm(X3[i-1,],mu0,sigma0)}
+  if (C1==F & C2== F) { ap= min((ddbivnorm(as.vector(candi),mu0,sigma0)*h(D,as.vector(candi)))/
+                                  (ddbivnorm(X3[i-1,],mu0,sigma0)*h(D,as.vector(X3[i-1,]))),1)}
+  U=runif(1)
+  if(U<=ap){X3[i,]=candi
+  na3=na3+1}
+  else X3[i,]=X3[i-1,]
+}
+
+X3=as.data.frame(X3)
+colnames(X3)=c("X1","X2")
+acc3=na3/N
+acc3
+cov(X3$X1,X3$X2)
+summary(X3)
+### ploting -3 ##########
+ggplot()+geom_jitter(aes(x=real.sample$X1,y=real.sample$X2),col="gray",alpha=0.6)+
+  geom_jitter(aes(x=X3$X1,y=X3$X2),col="#FF3366",alpha=0.3)+xlab("X1")+ylab("X2")
+
+
+#mean plot
+X_mean=matrix(X[1,],nrow=N,ncol=2)
+for (i in 2:N){
+  X_mean[i,]=colMeans(X[1:i,])
+}
+
+plot(x=1:N,y=X_mean[,1])
+plot(x=1:N,y=X_mean[,2])
+#trace plot
+plot(x=1:N,y=X[,1])
+plot(x=1:N,y=X[,2])
+
+############# 4 ###############
+set.seed(2020)
+X4=matrix(c(rnorm(1),rnorm(1)),nrow=N,ncol=2)
+colnames(X4)=c("X1","X2")
+N=6000
+s4=1
+na4=0
+for (i in 1:(N-1)){
+  z=runif(2,-s4,s4)
+  candi=mu0-(X4[i,]-mu0)+z
+  ap=min(dmvnorm(candi,mu0,sigma0)/dmvnorm(X4[i,],mu0,sigma0),1)
+  U=runif(1,0,1)
+  if(U<=ap){
+    X4[i+1,]=candi
+    na4=na4+1}
+  if(U>ap){X4[i+1,]=X4[i,]}
+}
+### ploting -4 ###########
+X4=as.data.frame(X4)
+colnames(X4)=c("X1","X2")
+ggplot()+geom_jitter(aes(x=real.sample$X1,y=real.sample$X2),col="gray",alpha=0.6)+
+  geom_jitter(aes(x=X4$X1,y=X4$X2),col="#FF3366",alpha=0.3)+xlab("X1")+ylab("X2")
+acc4=na4/N
+acc4
+cor(X4$X1,X4$X2) #0.8968
+summary(X4)
+
+X1.mean=matrix(X1[1,],nrow=N,ncol=2)
+X2.mean=matrix(X2[1,],nrow=N,ncol=2)
+X3.mean=matrix(X3[1,],nrow=N,ncol=2)
+X4.mean=matrix(X4[1,],nrow=N,ncol=2)
+
+for (i in 2:N){
+  X1.mean[i,]=colMeans(X1[1:i,])
+  X2.mean[i,]=colMeans(X2[1:i,])
+  X3.mean[i,]=colMeans(X3[1:i,])
+  X4.mean[i,]=colMeans(X4[1:i,])
+}
+colnames(X1.mean)=c("X1_mean","X2_mean")
+colnames(X2.mean)=c("X1_mean","X2_mean")
+colnames(X3.mean)=c("X1_mean","X2_mean")
+colnames(X4.mean)=c("X1_mean","X2_mean")
+X1.mean=as.data.frame(X1.mean)
+X2.mean=as.data.frame(X2.mean)
+X3.mean=as.data.frame(X3.mean)
+X4.mean=as.data.frame(X4.mean)
+
+par(mfrow=c(2,4))
+
+# Chenck the convergence
+
+X1.1.mcmc=mcmc(X1[,1])
+X1.2.mcmc=mcmc(X1[,2])
+X2.1.mcmc=mcmc(X2[,1])
+X2.2.mcmc=mcmc(X2[,2])
+X3.1.mcmc=mcmc(X3[,1])
+X3.2.mcmc=mcmc(X3[,2])
+X4.1.mcmc=mcmc(X4[,1])
+X4.2.mcmc=mcmc(X4[,2])
+
+traceplot(X1.1.mcmc)
+traceplot(X1.2.mcmc)
+
+traceplot(X2.1.mcmc)
+traceplot(X2.2.mcmc)
+
+traceplot(X3.1.mcmc)
+traceplot(X3.2.mcmc)
+
+traceplot(X4.1.mcmc)
+traceplot(X4.2.mcmc)
+
+#7-2
+install.packages("invgamma")
+library(invgamma)
+######## def.func ##############
+inv.V=function(pie){
+  matrix(c(1-pie[2]^2,-pie[1]*(1+pie[2]),-pie[1]*(1+pie[2]),1-pie[2]^2),nrow=2,ncol=2,byrow=T)
+}
+
+pdf.Y2=function(pie,s2,V){
+  y=1/s2*sqrt(abs((det(V)))*exp(-(t(Y2)%*%V%*%Y2)/(2*s2)))
+  return(y)
+}
+#if the prior information is only that it is stationary
+prior=function(pie){
+  if ((pie[1]+pie[2]<1)&(-pie[1]+pie[2]<1)&(pie[2]>-1)){
+    result=1
+  }
+  else result=0
+  return(result)
+}
+
+##################### start simulate #########
+
+set.seed(3418)
+n=100
+y=arima.sim(model=list(order=c(2,0,0),ar=c(1,-0.5)),n=100,sd=1)
+Y2=y[1:2]
+y_=y[3:n]
+N=5500
+pie=matrix(c(0.5,0.2),nrow=N,ncol=2,byrow=T)
+s2=c()
+inv.V_1=inv.V(pie[1,])
+s2[1]=2
+wt=cbind(y[2:(n-1)],y[1:(n-2)])
+G=t(wt)%*%(wt)
+pie.hat=solve(G)%*%(t(wt)%*%y[3:n])
+
+n.accept=0
+for ( i in 2:N){
+  s.ma=s2[i-1]*solve(G)
+  repeat{ 
+    candi=c(rmvnorm(1,mean=pie.hat,sigma=s.ma))
+    if (prior(candi)==1){ break}
+    }
+  ap=min((Psi(candi,s2[i-1])/Psi(pie[i-1,],s2[i-1])),1)
+  
+  if (is.nan(ap)==T){ ap=0}
+  U=runif(1,0,1)
+  if ( U <= ap) { 
+    pie[i,]=candi
+    n.accept=n.accept+1
+    s2[i]=rinvgamma(1,shape = n/2,rate  = (Y2%*%inv.V_candi%*%Y2+sum((y_-wt%*%pie[i-1,])^2)))
+  }
+  if(U>ap) {
+    pie[i,]=pie[i-1,]
+    s2[i]=rinvgamma(1,shape = length(y)/2,rate = (Y2%*%inv.V_pre%*%Y2+sum((y_-wt%*%pie[i,])^2)))
+  }
+}
+summary(pie[501:N,])
+summary(s2[501:N])
+acc.bp=n.accept/N
+acc.bp
+
+sd(s2)
+params=cbind(pie,s2)
+params=params[501:N,]
+results=apply(params,2,function(z){
+  c(mean(z),sd(z),median(z),quantile(z,prob=c(0.025,0.975)),cor(z[2:dim(params)[1]],z[1:(dim(params)[1]-1)]))
+})
+results=t(results)
+colnames(results)=c("mean","sd","median","lower","upper","corr")
+results=as.data.frame(results)
+results$"num.se"=sqrt(c(apply(params,2,function(z){olbm(z,50)})))
+rownames(results)=c("pie.1","pie.2","s2")
+results
+rr=cbind(results[,1],results[,7],results[,2:6])
+colnames(rr)[1:2]=c("mean","num.se")

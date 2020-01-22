@@ -1,0 +1,325 @@
+######## Using R ######## -> Not finished
+##########################
+### Bayesian Statistics
+### Week 11-2
+### 2019/11/14
+##########################
+
+rm(list=ls(all=TRUE))
+
+####################################
+#### Example
+#### Bivariate Normal Distribution
+####################################
+N=100
+burn=N/2
+
+## data
+y1=0
+y2=0
+
+## correlation
+rho=0.8
+
+## initial values
+theta.1=rep(1,N)
+theta.2=rep(1,N)
+theta=cbind(theta.1,theta.2)
+
+## iterations
+for (i in 1:(N-1)){
+  theta.1[i+1]=rnorm(1,y1+rho*(theta.2[i]-y2),sqrt(1-rho^2))
+  theta.2[i+1]=rnorm(1,y2+rho*(theta.1[i+1]-y1),sqrt(1-rho^2))
+  theta[i+1,]=c(theta.1[i+1],theta.2[i+1])
+}
+
+# check traceplots
+windows()
+par(mfrow=c(2,1))
+plot(1:N,theta.1,type="l")
+plot(1:N,theta.2,type="l")
+
+windows()
+par(mfrow=c(1,1))
+plot(theta)
+colMeans(theta)
+cov(theta)
+cor(theta)
+
+ntr=10
+windows()
+par(mfrow=c(1,1))
+plot(theta.1[1:ntr],theta.2[1:ntr],type="l")
+text(theta.1[1:ntr],theta.2[1:ntr],labels=1:10,cex=1, font=5)
+
+
+### Bivariate normal
+library(mvtnorm)
+
+joint.s=rmvnorm(N/2,mean=c(y1,y2),sig=matrix(c(1,rho,rho,1),2,2))
+
+colMeans(joint.s)
+cov(joint.s)
+cor(joint.s)
+plot(joint.s)
+
+
+#####################################
+#### Example 1
+#### Bivariate Normal Distribution
+#### Using Metropolis Algorithm
+#####################################
+N=100
+burn.in=N/2
+
+## data
+y1=0
+y2=0
+
+## correlation
+rho=0.8
+
+## initial value
+sig2=1-rho^2                   # variance for posterior density
+sig2.prop=1                    # variance for proposal density
+theta.1=rep(1,N)
+theta.2=rep(1,N)
+
+
+## iterations
+for (i in 1:(N-1)){
+  
+  
+  ## for theta.1
+  theta.1.star=rnorm(1,theta.1[i],sqrt(sig2.prop))
+  U.1=runif(1,0,1)
+  
+  ratio.1=dnorm(theta.1.star,y1+rho*(theta.2[i]-y2),1-rho^2)/dnorm(theta.1[i],y1+rho*(theta.2[i]-y2),1-rho^2)
+  alpha.1=min(ratio.1,1)
+  
+  if (U.1<=alpha.1){theta.1[i+1]=theta.1.star}
+  else theta.1[i+1]=theta.1[i]
+  
+  
+  
+  ## for theta.2
+  theta.2.star=rnorm(1,theta.2[i],sqrt(sig2.prop))
+  U.2=runif(1,0,1)
+  
+  ratio.2=dnorm(theta.2.star,y2+rho*(theta.1[i+1]-y1),1-rho^2)/dnorm(theta.2[i],y2+rho*(theta.1[i+1]-y1),1-rho^2)
+  alpha.2=min(ratio.2,1)
+  
+  if (U.2<=alpha.2){theta.2[i+1]=theta.2.star}
+  else theta.2[i+1]=theta.2[i]
+  
+}
+
+theta=cbind(theta.1,theta.2)
+
+# check traceplots
+windows()
+par(mfrow=c(2,1))
+plot(1:N,theta.1,type="l")
+plot(1:N,theta.2,type="l")
+
+windows()
+par(mfrow=c(1,2))
+hist(theta[(burn.in+1):N,1])
+hist(theta[(burn.in+1):N,1])
+
+windows()
+par(mfrow=c(1,1))
+plot(theta[(burn.in+1):N,])
+colMeans(theta[(burn.in+1):N,])
+cov(theta[(burn.in+1):N,])
+cor(theta[(burn.in+1):N,])
+
+
+
+####################################
+#### Example 2
+#### Student t distribution
+#### Metropolis Algorithm
+####################################
+mh=function(nu,sigma,x0,N){
+  x=numeric(N)
+  x[1]=x0
+  k=0
+  for (i in 2:N){
+    y=rnorm(1,x[i-1],sigma)
+    u=runif(1)
+    alpha=min(dt(y,nu)/dt(x[i-1],nu),1)
+    if (u<=alpha){x[i]=y}
+    else {x[i]=x[i-1]
+    k=k+1
+    }
+  }
+  return(list(x=x,k=k))
+}
+
+N=1000
+burn.in=N/2
+nu=4
+x0=1
+sigma=c(0.05,0.5,2,16)
+mh1=mh(nu,sigma[1],x0,N)
+mh2=mh(nu,sigma[2],x0,N)
+mh3=mh(nu,sigma[3],x0,N)
+mh4=mh(nu,sigma[4],x0,N)
+
+## number of candidate points rejected
+c(mh1$k,mh2$k,mh3$k,mh4$k)/N
+
+windows()
+par(mfrow=c(2,2))
+plot(1:N,mh1$x,type="l")
+plot(1:N,mh2$x,type="l")
+plot(1:N,mh3$x,type="l")
+plot(1:N,mh4$x,type="l")
+
+a=seq(-5,5,by=0.01)
+windows()
+par(mfrow=c(2,2))
+hist(mh1$x[(burn.in+1):N],freq=F,ylim=c(0,0.7))
+lines(a,dt(a,df=4))
+
+hist(mh2$x[(burn.in+1):N],freq=F,ylim=c(0,0.4))
+lines(a,dt(a,df=4))
+
+hist(mh3$x[(burn.in+1):N],freq=F,ylim=c(0,0.4))
+lines(a,dt(a,df=4))
+
+hist(mh4$x[(burn.in+1):N],freq=F,ylim=c(0,0.4))
+lines(a,dt(a,df=4))
+
+
+
+
+############################
+#### Example 3
+#### Rayleigh Distribution
+#### M-H Algorithm
+############################
+
+install.packages("VGAM")
+library(VGAM)
+
+N=10000
+burn.in=N/2
+sigma=4
+x=numeric(N)
+x[1]=rchisq(1,df=1)
+k=0
+
+for (i in 2:N){
+  x.star=rchisq(1,df=x[i-1])
+  u=runif(1)
+  num=(x.star/(sigma^2)*exp(-x.star^2/(2*sigma^2)))*dchisq(x[i-1],df=x.star)
+  den=(x[i-1]/(sigma^2)*exp(-x[i-1]^2/(2*sigma^2)))*dchisq(x.star,df=x[i-1])
+  alpha=min(num/den,1)
+  if (u<=alpha){x[i]=x.star}
+  else {x[i]=x[i-1]
+  k=k+1 # number of rejected candidate points
+  }
+}
+
+windows()
+plot(1:N,x,type="l")
+
+windows()
+hist(x[(burn.in+1):N])
+
+# check true value
+xgrid=seq(0,20,by=0.1)
+ytrue=drayleigh(xgrid,scale=sigma)
+
+windows()
+hist(x[(burn.in+1):N],freq=F)
+lines(xgrid,ytrue,type="l")
+
+############################################################################################################################
+#### Using Python for drawing figure 5 #######
+import numpy as np
+import pandas as pd
+from math import *
+from numpy.random import *
+from scipy.stats import *
+import matplotlib.pyplot as plt
+
+M=500
+k=10
+lamb=16
+a=2
+b=4
+
+def condi_x(n,p) :
+    x=np.random.binomial(n,p,1)
+    return x
+
+def condi_y(x,n):
+    y=np.random.beta(x+a,n-x+b,1)
+    return y
+
+def condi_n(lam,x):
+    n_temp=np.random.poisson(lam,1)
+    n=n_temp+x
+    return n
+
+def rowmean(arr):
+    z=np.empty((arr.shape[0],1))
+    for i in range(arr.shape[0]):
+        z[i,:]=np.mean(arr[i,:])
+    return z
+
+def marginal_x(x,y,n,m):
+    nonearr=np.empty((len(x),m))
+    for i in range(m):
+        for j in range(len(x)):
+            if x[j]<=n[i]:
+                nonearr[j,i]=binom.pmf(x[j],n[i],y[i])
+            else :
+                nonearr[j,i]=0
+    z=rowmean(nonearr)
+    return z
+
+seq=np.arange(0,31,1)
+k=50 ( doing Gibbs sampling when k=10,k=20)
+
+
+
+#Doing All process for "how"much
+
+how=100
+SS=np.empty((len(seq),how))
+
+for r in range(how):
+    seed=r*30
+    np.random.seed(seed)
+    
+    X=np.repeat(None,M,axis=0)
+    Y=np.repeat(None,M,axis=0)
+    N=np.repeat(None,M,axis=0)
+    
+    for i in range(M):
+        y=np.random.beta(1,1,1)
+        n=np.random.poisson(20,1)
+        x=condi_x(n[0],y[0])
+        for j in range(k-1):
+            n=np.concatenate((n,condi_n(lamb,x[j])),axis=None)
+            y=np.concatenate((y,condi_y(x[j],n[j+1])),axis=None)
+            x=np.concatenate((x,condi_x(n[j+1],y[j+1])),axis=None)
+
+        X[i]=x[k-1]
+        Y[i]=y[k-1]
+        N[i]=n[k-1]
+    
+    x_=marginal_x(seq,Y,N,M)
+    SS[:,r]=x_.reshape(1,len(seq))
+mm_x=rowmean(SS)
+
+n_groups=len(seq)
+index=np.arange(n_groups)
+xl=mm_x.tolist()
+xx=sum(xl,[])
+plt.bar(index,xx,tick_label=seq,align='center')
+plt.title("Marginal Distributin (k=50,Num of process 100)")

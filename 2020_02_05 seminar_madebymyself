@@ -1,0 +1,297 @@
+library(loo)
+library(ggplot2)
+library(ggmcmc)
+library(dplyr)
+library(rstan)
+########
+rm(list=ls())
+
+setwd("C:\\Users\\Kanii\\Desktop\\세미나\\세미나_3_2020_02_05")
+ern.data <- read.csv(file = "ern.data.csv", stringsAsFactors = FALSE)
+
+#######
+df.e=ern.data
+df.e$sex=as.factor(df.e$sex)
+str(df.e)
+
+lm.1=lm(ern_mean~anxiety,data=df.e)
+summary(lm.1)
+
+lm.2=lm(ern_mean~anxiety+sex,data=df.e)
+summary(lm.2)
+
+lm.3=lm(ern_mean~anxiety+sex+anxiety*sex,data=df.e)
+summary(lm.3)
+
+str(ern.data)
+# Model1 : ern_mean = b0 + b1*anxiety + e
+code_model1='
+  data{
+    int N;
+    real ern_mean[N];
+    real anxiety[N];
+  }
+  parameters {
+    real b0;
+    real b1;
+    real<lower=0> sigma;
+  }
+  model {
+    for (n in 1:N){
+      ern_mean[n]~normal(b0 + b1*anxiety[n],sigma);
+    }
+    b0 ~ normal(0,3);
+    b1 ~ normal(0,3);
+    sigma ~ cauchy(0,2.5);
+  }
+   generated quantities {
+    vector[N] log_lik;
+    for (i in 1:N){
+      log_lik[i]=normal_lpdf(ern_mean[i]| b0 + b1*anxiety[i] ,sigma);
+    }
+  }  
+'
+dat_model1=list(
+  N=nrow(ern.data),ern_mean=ern.data$ern_mean,anxiety=ern.data$anxiety
+)
+fit_1=stan(model_code = code_model1,data=dat_model1,iter = 2000,chains = 4,seed = 3418)
+print(fit_1)
+
+log_lik1=extract_log_lik(fit_1,merge_chains = F)
+r_eff1=relative_eff(exp(log_lik1),cores = 2)
+waic(log_lik1)
+loo(log_lik1,r_eff=r_eff1)
+#getAnywhere(brm)
+
+fit1_ggs=ggs(fit_1,stan_include_auxiliar = F)
+ggs_traceplot(fit1_ggs)+theme_minimal()
+
+
+# Model2 : ern_mean = b0 + b1*anxiety + b2*sex + e
+code_model2='
+  data{
+    int N;
+    real ern_mean[N];
+    real anxiety[N];
+    int<lower=0,upper=1> sex[N];
+  }
+  parameters {
+    real b0;
+    real b1;
+    real b2;
+    real<lower=0> sigma;
+  }
+  model{
+    for (n in 1:N){
+      ern_mean[n]~normal(b0+b1*anxiety[n]+b2*sex[n],sigma);
+    }
+    b0 ~ normal(0,3);
+    b1 ~ normal(0,3);
+    b2 ~ normal(0,3);
+    sigma ~ cauchy(0,2.5);
+  }
+'
+dat_model2=list(
+  N=nrow(ern.data),ern_mean=ern.data$ern_mean,anxiety=ern.data$anxiety,sex=ern.data$sex
+)
+fit_2=stan(model_code = code_model2,data=dat_model2,iter = 2000,chains = 4,seed = 3418)
+print(fit_2)
+
+fit2_ggs=ggs(fit_2,stan_include_auxiliar = F)
+ggs_traceplot(fit2_ggs)+theme_minimal()
+
+########### Calculate WIAC #############
+waic2='
+  data{
+    int N;
+    real ern_mean[N];
+    real anxiety[N];
+    int<lower=0,upper=1> sex[N];
+  }
+  parameters {
+    real b0;
+    real b1;
+    real b2;
+    real<lower=0> sigma;
+  }
+  model{
+    for (n in 1:N){
+      ern_mean[n]~normal(b0+b1*anxiety[n]+b2*sex[n],sigma);
+    }
+    b0 ~ normal(0,3);
+    b1 ~ normal(0,3);
+    b2 ~ normal(0,3);
+    sigma ~ cauchy(0,2.5);
+  }
+  generated quantities {
+    vector[N] log_lik;
+    for (i in 1:N){
+      log_lik[i]=normal_lpdf(ern_mean[i]| b0 + b1*anxiety[i] + b2*sex[i],sigma);
+    }
+  }  
+'
+fit_waic2=stan(model_code = waic2,data=dat_model2,iter = 2000,chains = 4,seed = 3418)
+log_lik2=extract_log_lik(fit_waic2,merge_chains = F)
+r_eff2=relative_eff(exp(log_lik2),cores = 2)
+waic(log_lik2)
+loo(log_lik2,r_eff=r_eff2)
+
+########
+summary(ern.data)
+
+sam=seq(-3,2,0.1)
+
+s=-1.12+0.24-0.35*sam
+s=as.data.frame(s)
+
+ggplot(data=s,aes(x=sam,y=s))+geom_line(fill="gray80")
+  geom_vline(xintercept = pred.mean, size = 2)
+
+# Model3 : ern_mean = b0 + b1*anxiety + b2*sex + b3*anxiety*sex + e
+code_model3='
+  data{
+    int N;
+    real ern_mean[N];
+    real anxiety[N];
+    int<lower=0,upper=1> sex[N];
+  }
+  transformed data {
+    real inter[N];
+    for (i in 1:N){
+      inter[i]=anxiety[i]*sex[i];
+    }
+  }
+  parameters {
+    real b0;
+    real b1;
+    real b2;
+    real b3;
+    real<lower=0> sigma;
+  }
+  model{
+    for (n in 1:N){
+      ern_mean[n]~normal(b0+b1*anxiety[n]+b2*sex[n]+b3*inter[n],sigma);
+    }
+    b0 ~ normal(0,3);
+    b1 ~ normal(0,3);
+    b2 ~ normal(0,3);
+    b3 ~ normal(0,3);
+    sigma ~ cauchy(0,2.5);
+  }
+  generated quantities {
+    vector[N] log_lik;
+    for (i in 1:N){
+      log_lik[i]=normal_lpdf(ern_mean[i]| b0 + b1*anxiety[i] + b2*sex[i]+b3*inter[i],sigma);
+    }
+  }    
+'
+dat_model3=list(
+  N=nrow(ern.data),ern_mean=ern.data$ern_mean,anxiety=ern.data$anxiety,sex=ern.data$sex
+)
+fit_3=stan(model_code = code_model3,data=dat_model3,iter = 2000,chains = 4,seed = 3418)
+print(fit_3)
+
+fit2_ggs=ggs(fit_2,stan_include_auxiliar = F)
+ggs_traceplot(fit2_ggs)+theme_minimal()
+
+log_lik3=extract_log_lik(fit_3,merge_chains = F)
+waic(log_lik3)
+r_eff3=relative_eff(exp(log_lik3),cores = 2)
+loo(log_lik3,r_eff=r_eff3)
+#Posterior Ploting
+#sex=1 ->female
+model2.sam=posterior_samples(fit_2)
+model2.M.int=model2.sam$b0
+model2.F.int=model2.sam$b0+model2.sam$b2
+model2.M.slope=model2.sam$b1
+model2.F.slope=model2.sam$b1
+
+dens.mod2 <- cbind(model2.M.int,model2.F.int,model2.M.slope,model2.F.slope)
+dens.mod2=as.data.frame(dens.mod2)
+mod2.int.Male.ll <- quantile(dens.mod2$model2.M.int, .025)
+mod2.int.Male.ul <- quantile(dens.mod2$model2.M.int, .975)
+mod2.int.Female.ll <- quantile(dens.mod2$model2.F.int, .025)
+mod2.int.Female.ul <- quantile(dens.mod2$model2.F.int, .975)
+mod2.slope.Male.ll <- quantile(dens.mod2$model2.M.slope, .025)
+mod2.slope.Male.ul <- quantile(dens.mod2$model2.M.slope, .975)
+mod2.slope.Female.ll <- quantile(dens.mod2$model2.F.slope, .025)
+mod2.slope.Female.ul <- quantile(dens.mod2$model2.F.slope, .975)
+colnames(dens.mod2) <- c("Intercept: Male", "Intercept: Female", "Slope: Male", "Slope: Female")
+
+### Make a long dataset
+dens.mod2.long <- melt(dens.mod2, id.vars = NULL)
+
+### Create a new variables for faceting in ggplot
+dens.mod2.long$int <- ifelse(dens.mod2.long$variable == "Intercept: Male", "Intercept",
+                             ifelse(dens.mod2.long$variable == "Intercept: Female", "Intercept", "Slope"))
+
+### Build the foundational part of the plot
+p <- ggplot() +
+  geom_density(data = dens.mod2.long, aes(x = value, linetype = variable)) +
+  facet_grid( ~ int) +
+  scale_linetype_manual(name = "Parameter", values = c("solid", "dotted", "solid", "dotted"))
+
+### build datasets for shading
+d <- ggplot_build(p)$data[[1]]
+d.int.Male <- filter(d, PANEL == 1 & group == 1, x > mod2.int.Male.ll & x < mod2.int.Male.ul)
+d.int.Male$int = "Intercept"
+d.int.Female <- filter(d, PANEL == 1 & group == 2, x > mod2.int.Female.ll & x < mod2.int.Female.ul)
+d.int.Female$int = "Intercept"
+d.slope.Male <- filter(d, PANEL == 2 & group == 3, x > mod2.slope.Male.ll & x < mod2.slope.Male.ul)
+d.slope.Male$int = "Slope"
+d.slope.Female <- filter(d, PANEL == 2 & group == 4, x > mod2.slope.Female.ll & x < mod2.slope.Female.ul)
+d.slope.Female$int = "Slope"
+
+### add shading to the plot
+p <- p +
+  geom_area(data = d.int.Female,
+            aes(x = x, y = y), fill = "gray60", color = "black", alpha = .5, linetype = "dotted") +
+  geom_area(data = d.int.Male,
+            aes(x = x, y = y), fill = "gray80", color = "black", alpha = .5, linetype = "solid") +
+  geom_area(data = d.slope.Female,
+            aes(x = x, y = y), fill = "gray60", color = "black", alpha = .5, linetype = "dotted") +
+  geom_area(data = d.slope.Male,
+            aes(x = x, y = y), fill = "gray80", color = "black", alpha = .5, linetype = "solid") +
+  ylab("Density \n") +
+  xlab("\n Sampled Parameter") +
+  theme_bw() +
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14),
+        strip.text.x = element_text(size = 12))
+p
+
+##### Figure 7 #####
+mod2 <- brm(ern_mean ~ anxiety + sex, data = ern.data,
+            prior=c(set_prior("normal(0,3)",class="b"),
+                    set_prior("cauchy(0,2.5)",class="sigma")),
+            family = gaussian(),seed=3418)
+summary(mod2, waic = TRUE)
+
+
+stanplot(mod2, type = "trace", inc_warmup = TRUE, ncol = 1) 
+
+pred.mod2 <- fitted(mod2, summary = TRUE)
+colnames(pred.mod2) <- c("Estimate", "Est.Error", "low", "high")
+?fitted
+mod2.dat <- as.data.frame(cbind(ern = ern.data$ern_mean,
+                                anxiety = ern.data$anxiety,
+                                sex = ern.data$sex,
+                                pred.mod2))
+mod2.dat$gender <- ifelse(mod2.dat$sex == 1, "Women", "Men")
+
+
+mod2.plot <- ggplot(data = mod2.dat, aes(x = anxiety, y = ern))
+mod2.plot <- mod2.plot + geom_point() +
+  geom_ribbon(aes(x = anxiety, ymin = low, ymax = high), fill = "gray80", alpha = 0.5) +
+  geom_ribbon(aes(x = anxiety, ymin = Estimate - 0.01, ymax = Estimate + 0.01),
+              fill = "black") +
+  facet_wrap( ~ gender) +
+  xlab("\n Standardized Trait Anxiety") +
+  ylab("Error Related Negativity \n") +
+  theme_bw() +
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14),
+        strip.text.x = element_text(size = 12))
+mod2.plot
+
+#######
